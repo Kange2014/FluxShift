@@ -138,8 +138,6 @@ def plot_rxn_shifts_all_strains(df, df2, r, xmax, xmin, ymax):
     df_tmp2 = df2[keys[0]]
     strain = keys[0]
     
-    print df_tmp.shape
-    
     #df_tmp[r].plot(kind='density',label=1, ax=axes[0,0],color=sns.color_palette()[0], title=strain)
     #df_tmp2[r].plot(kind='density',label=2,ax=axes[0,0],color=sns.color_palette()[1], title=strain)
     sns.kdeplot(df_tmp[r], shade=True, color=c2, alpha=0.7,ax=axes[0],label= labels[0]);
