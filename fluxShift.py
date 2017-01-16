@@ -26,6 +26,26 @@ import random as rand
 
 # For MCMC sampling analysis
 
+def get_met_sum_flux(df, m):
+    read_to_struct = []
+    
+    # compute m_met,j for all metabolites from df to get sum flux
+
+    for j in m.metabolites:
+        m_met = 0
+        N_j = len(m.metabolites.get_by_id(j.id).get_reaction()) # N_j = number of reactions met_j is involved in
+        if N_j != 0:  
+            for r_j in m.metabolites.get_by_id(j.id).get_reaction():
+                react = r_j.id
+                flux = df[react].mean()
+                for (metabolite,coefficient) in react.metabolites.items():
+                    if metabolite == j: 
+                        m_met += abs(flux*coefficient)
+            
+            read_to_struct.append({'metabolite':j.id,'sum_flux':np.true_divide(m_met,2))
+            
+    return pd.DataFrame(read_to_struct)
+
 def remove_unwanted_rxns(df,reactions_to_remove):
     df_reduced = df.copy(deep=True)
     
@@ -46,23 +66,22 @@ def prune_mcmc_fluxes(df,m):
             
             df[react][i] = np.true_divide(df[react][i], glc_uptake)
             
-    #2) weed out reactions with flux over 10*glc uptake rate for over 75% of the flux states
-    # produces two new df with removed columns corresponding to list rxn_ex_rpp_removed and
-    # those with fluxes > 10 from 1-25% of the time
+    #2) Note: none of the remaining reactions have a significant amount of fluxes above the threshold:
+    ##  No reactions have fluxes greater than 10 x glc uptake for > 99% of flux states
+    ##  No reactions have fluxes greater than 20 x glc uptake
     
     rxn_removed = []
     read_to_struct = []
     read_to_struct2 = []
     
     for react in df.columns:
-        if len(df[abs(df[react])<10]) < len(df.index)*.75:
+        if len(df[abs(df[react])>10]) > len(df.index)*.99 or len(df[abs(df[react])>20]) > 0:
             rxn_removed.append(react)
-            read_to_struct.append({ 'react_id':react, 'subsystem':m.reactions.get_by_id(react).subsystem,  'percent of states with flux < 10':len(df[abs(df[react])<10]), 'min abs flux':abs(df[react]).min(), 'max abs flux':abs(df[react]).max()})
+            read_to_struct.append({ 'react_id':react, 'subsystem':m.reactions.get_by_id(react).subsystem,  'percent of states with flux > 10':len(df[abs(df[react])>10]), 'min abs flux':abs(df[react]).min(), 'max abs flux':abs(df[react]).max()})
 
-        # see how many remaining reactions have flux > 10 for 1-25% of the flux distributions
-        elif len(df[abs(df[react])<10]) != len(df.index):
-            read_to_struct2.append({'react_id':react, 'subsystem':m.reactions.get_by_id(react).subsystem,  'percent of states with flux < 10':len(df[abs(df[react])<10]), 'min abs flux':abs(df[react]).min(), 'max abs flux':abs(df[react]).max()})
-
+        # see how many remaining reactions have flux > 10 for 1-99% of the flux distributions
+        elif len(df[abs(df[react])>10]) > 0:
+            read_to_struct2.append({'react_id':react, 'subsystem':m.reactions.get_by_id(react).subsystem,  'percent of states with flux > 10':len(df[abs(df[react])>10]), 'min abs flux':abs(df[react]).min(), 'max abs flux':abs(df[react]).max()})
 
     df_rxns_high_flux_removed = pd.DataFrame(read_to_struct)  
     df_rxns_high_flux_partial = pd.DataFrame(read_to_struct2)  
@@ -114,29 +133,25 @@ def get_mean_std_pvalue(sample1, sample2, m, state1, state2):
     out = pd.DataFrame(out)
     return out
 
-def plot_rxn_shifts_all_strains(df, df2, r, xmax, xmin, ymax):
+def plot_rxn_shifts_all_strains(df, df2, df3, r, xmax, xmin, ymax):
     
     name_graph = r+'_'+'all_strains'+'_rxn_shifts'
     
-    fig, axes = plt.subplots(nrows=1, ncols=2)  # change for adding in bis
+    fig, axes = plt.subplots(nrows=1, ncols=3)  # change for adding in bis
     
     #c1, c2, c3 = sns.color_palette("Set1", 3)
     
-    c1, c2 = sns.color_palette("Set2", 2)
+    c1, c2, c3 = sns.color_palette("Set2", 3)
 
+    
     keys = df.keys()
-    print keys
+ 
     labels = []
-    if keys[0] == 'Control':
-        labels.append('phase 1')
-        labels.append('phase 2')
-    else:
-        labels.append('Control')
-        labels.append('20aas')
-        
+    labels.append('50%glc')
+    labels.append('25%glc_10%YE')
+
     df_tmp = df[keys[0]]
-    df_tmp2 = df2[keys[0]]
-    strain = keys[0]
+    df_tmp2 = df[keys[1]]
     
     #df_tmp[r].plot(kind='density',label=1, ax=axes[0,0],color=sns.color_palette()[0], title=strain)
     #df_tmp2[r].plot(kind='density',label=2,ax=axes[0,0],color=sns.color_palette()[1], title=strain)
@@ -144,23 +159,31 @@ def plot_rxn_shifts_all_strains(df, df2, r, xmax, xmin, ymax):
     sns.kdeplot(df_tmp2[r], shade=True, color=c3, alpha=0.7,ax=axes[0],label= labels[1])
     axes[0].set_xlim(xmin,xmax)
     axes[0].set_ylim(0,ymax)
-    axes[0].set_title(strain)
+    axes[0].set_title("Phase I")
     
-    df_tmp = df[keys[1]]
+    df_tmp = df2[keys[0]]
     df_tmp2 = df2[keys[1]]
-    strain = keys[1]
     
     sns.kdeplot(df_tmp[r], shade=True, color=c2, alpha=0.7,ax=axes[1],label= labels[0]);
     sns.kdeplot(df_tmp2[r], shade=True, color=c3, alpha=0.7,ax=axes[1],label= labels[1])
     axes[1].set_xlim(xmin,xmax)
     axes[1].set_ylim(0,ymax)
-    axes[1].set_title(strain)
+    axes[1].set_title("Phase II")
+
+    df_tmp = df3[keys[0]]
+    df_tmp2 = df3[keys[1]]
+    
+    sns.kdeplot(df_tmp[r], shade=True, color=c2, alpha=0.7,ax=axes[2],label= labels[0]);
+    sns.kdeplot(df_tmp2[r], shade=True, color=c3, alpha=0.7,ax=axes[2],label= labels[1])
+    axes[2].set_xlim(xmin,xmax)
+    axes[2].set_ylim(0,ymax)
+    axes[2].set_title("Phase III")
     
     fig.tight_layout()
 
     fig = plt.gcf()
-    fig.set_figwidth(17)
-    fig.set_figheight(10)
+    fig.set_figwidth(12)
+    fig.set_figheight(5)
 	
 # Classify flux shifts
 
@@ -263,7 +286,8 @@ def find_flux_shifts(df,m,state1,state2):
     
     return (df,same,change)
 
-	
+
+## z scores that correct for the background distribution by normalizing them 	
 def get_zscore(sample1, sample2, m, flux_shift_stats_dict, strain):    
     ''' takes in two dataframes that are sampled flux distributions (sample1 and sample2 are two sampled states)
     m is an M model. It outputs a new dataframe with reaction z scores'''
@@ -316,7 +340,7 @@ def get_zscore(sample1, sample2, m, flux_shift_stats_dict, strain):
     out = pd.DataFrame(out)
     return out
 
-def get_met_zscore(sample1, sample2, m, flux_shift_stats_dict, DF_reaction_zscore, strain):
+def get_met_zscore(sample1, sample2, m, DF_reaction_zscore, strain):
     read_to_struct = []
     m_met_Nj =[]
     counter = 0
@@ -335,54 +359,14 @@ def get_met_zscore(sample1, sample2, m, flux_shift_stats_dict, DF_reaction_zscor
             
     mu_p = np.mean(m_met_Nj)
     std_p = np.std(m_met_Nj)
-    #print mu_p, std_p, len(m_met_Nj)
 
-    mu_r_p = flux_shift_stats_dict[strain]['abs_mean_rel_diff'].mean()
-    std_r_p = flux_shift_stats_dict[strain]['abs_mean_rel_diff'].std()
-                
-    # compute m_met,j for 1000 randomly generated sampled reaction zscores
-
-    for j in m.metabolites:    
-        m_met_Nj=[]  # m_met_Nj is a list that holds all m_met_j z_scores from 100,000 randomly generated flux difference samples
-        N_j = len(m.metabolites.get_by_id(j.id).get_reaction()) # N_j = number of reactions met_j is involved in
-    
-        if N_j != 0:    
-            clear_output(wait=True)
-            print('***PROGRESS: %d/%d metabolites***\n' % (counter, len(m.metabolites)))
-            counter += 1
-            sys.stdout.flush()
-            
-            for i in range(0,10):
-                
-                z_score_Rj = [] # z_score_Rj is a list of all z_scores for all reactions, r_j in N_j
-                
-                for r_j in m.metabolites.get_by_id(j.id).get_reaction():
-                    react = r_j.id
-                
-                    if react in sample1.columns:
-                        cond1 = sample1[react]
-                    else:
-                        cond1 = pd.Series(np.zeros(10000))
-                    if react in sample2.columns:
-                        cond2 = sample2[react]
-                    else:
-                        cond2 = pd.Series(np.zeros(10000))
-
-                    # 10,000 flux differences randomly permuted!    
-                    cond1 = cond1.reindex(np.random.permutation(cond1.index))
-                    cond2 = cond2.reindex(np.random.permutation(cond2.index))
-            
-                    z = abs(cond1 - cond2)
-                    denom = np.true_divide(z.std(),np.sqrt(len(z)))
-                    z_score_i = (np.true_divide(abs(z.mean()-mu_r_p),std_r_p)) # this is my reaction z score per reaction
-                    z_score_Rj.append(z_score_i)
-                    
-                m_met_Nj.append(np.true_divide(np.sum(z_score_Rj),np.sqrt(N_j)))
-                        
-        mean_m_met_Nj = np.mean(m_met_Nj)        
-                
-        Z_met_j = np.true_divide(abs(mean_m_met_Nj - mu_p),std_p)
-        #print j, m_met, mean_m_met_Nj, std_m_met_Nj, mu_met_Nj #, np.mean(m_met_Nj), np.std(m_met_Nj)
-        read_to_struct.append({'metabolite':j.id,'num_rxns_involved':N_j, 'zscore':Z_met_j})
+    i = 0
+    for j in m.metabolites:
+        N_j = len(m.metabolites.get_by_id(j.id).get_reaction())
+        if N_j != 0:
+            Z_met_j = np.true_divide(abs(m_met_Nj[i] - mu_p),std_p)
+            i += 1
+            read_to_struct.append({'metabolite':j.id,'num_rxns_involved':N_j, 'zscore':Z_met_j})
             
     return pd.DataFrame(read_to_struct)
+
